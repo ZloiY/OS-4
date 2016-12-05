@@ -196,7 +196,7 @@ int main(int argc, char **argv)
 
 	while (TRUE)
 	{
-		system("pause");
+		/*system("pause");*/
 		AcceptSocket = accept(ListenSocket, NULL, NULL);
 
 		if (WSASetEvent(AcceptEvent) == FALSE)
