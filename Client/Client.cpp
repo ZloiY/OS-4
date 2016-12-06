@@ -19,13 +19,13 @@
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment (lib, "Mswsock.lib")
 #pragma comment (lib, "AdvApi32.lib")
-#define DEFAULT_PORT 5223
-#define DEFAULT_BUFLEN 512
+#define DEFAULT_PORT "5223"
+#define DEFAULT_BUFLEN 8192
 #define CLOSESOCK(s) \
         if(INVALID_SOCKET != s) {closesocket(s); s = INVALID_SOCKET;}
 #define ERR(e) \
         printf("%s:%s failed: %d [%s@%ld]\n",__FUNCTION__,e,WSAGetLastError(),__FILE__,__LINE__)
-#define DEFAULT_WAIT    30000
+#define DEFAULT_WAIT    3000
 #define WS_VER          0x0202
 
 using namespace std;
@@ -155,49 +155,54 @@ int main(int argc, char* argv[])
 			printf("WSAStartup failed with error: %d\n", iResult);
 			return 1;
 		}
-		if (INVALID_SOCKET == (csock = socket(AF_INET, SOCK_STREAM, 0)))
+		struct addrinfo *pResult = NULL, *ptr = NULL, hints;
+		ZeroMemory(&hints, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+		hints.ai_flags = AI_PASSIVE;
+		iResult = getaddrinfo("127.0.0.1", DEFAULT_PORT, &hints, &pResult);
+		if (iResult)
 		{
-			ERR("socket");
-			__leave;
-		}
-		if (SOCKET_ERROR == ioctlsocket(csock, FIONBIO, &uNonBlockingMode))
-		{
-			ERR("FIONBIO");
-			__leave;
+			printf("getaddrinfo failed: %d\n", iResult);
+			WSACleanup();
+			return 1;
 		}
 		srand(time(0));
 		int max_length = 1 + rand() % 20;
-	
+
 		char *sendbuf = new char[max_length];
 		for (int i(0); i < max_length; i++)
-			sendbuf[i] = 32 + rand()%125;
+			sendbuf[i] = 32 + rand() % 125;
+		/*if (SOCKET_ERROR == ioctlsocket(csock, FIONBIO, &uNonBlockingMode))
+		{
+			ERR("FIONBIO");
+			__leave;
+		}*/
 		/*addrLoopback.ss_family = AF_INET;
 		addrLoopback.__ss_align = ADDR_ANY;
 		INETADDR_SETLOOPBACK((SOCKADDR*)&addrLoopback);
 		SS_PORT((SOCKADDR*)&addrLoopback) = htons(DEFAULT_PORT);*/
-		client.sin_family = AF_INET;
-		client.sin_addr.s_addr = INADDR_ANY;
-		client.sin_port = htons(DEFAULT_PORT);
-		if (SOCKET_ERROR == connect(csock, (SOCKADDR*)&client, sizeof(client)))
+		//client.sin_family = AF_INET6;
+		//client.sin_addr.s_addr = INADDR_ANY;
+		//client.sin_addr.s_addr = inet_addr("127.0.0.1");
+		//client.sin_port = htons(DEFAULT_PORT);
+		/*if (SOCKET_ERROR == connect(csock, (SOCKADDR*)&client, sizeof(client)))
 		{
 			if (WSAEWOULDBLOCK != WSAGetLastError())
 			{
 				ERR("connect");
 				__leave;
 			}
-		}
-		//Call WSAPoll for writeability on connecting socket
-		fdarray.fd = csock;
-		fdarray.events = POLLWRNORM;
-		if (SOCKET_ERROR == (ret = WSAPoll(&fdarray, 1, DEFAULT_WAIT)))
-		{
-			ERR("WSAPoll");
-			__leave;
-		}
-		if (ret)
-		{
-			if (fdarray.revents & POLLWRNORM)
-			{
+		}*/
+		
+		if (INVALID_SOCKET == (csock = socket(pResult->ai_family, pResult->ai_socktype, pResult->ai_protocol))){
+				ERR("socket");
+				__leave;
+			}
+		if (connect(csock, pResult->ai_addr, pResult->ai_addrlen) != SOCKET_ERROR) {
+				//Call WSAPoll for writeability on connecting socket
+
 				printf("ConnectThread: Established connection\n");
 				//Send data
 				cout << sendbuf << endl;
@@ -208,26 +213,14 @@ int main(int argc, char* argv[])
 				}
 				else
 					printf("ConnectThread: sent %d bytes\n", ret);
-				iResult = shutdown(csock, SD_SEND);
+				/*iResult = shutdown(csock, SD_SEND);
 				if (iResult == SOCKET_ERROR) {
 					printf("shutdown send failed with error: %d\n", WSAGetLastError());
 					closesocket(csock);
 					WSACleanup();
 					__leave;
-				}
-			}
-		}
-		//Call WSAPoll for readability on connected socket
-		fdarray.events = POLLRDNORM;
-		if (SOCKET_ERROR == (ret = WSAPoll(&fdarray, 1, DEFAULT_WAIT)))
-		{
-			ERR("WSAPoll");
-			__leave;
-		}
-		if (ret)
-		{
-			if (fdarray.revents & POLLRDNORM)
-			{	
+				}*/
+				//Call WSAPoll for readability on connected socket	
 				if (SOCKET_ERROR == (ret = recv(csock, buf, sizeof(buf), 0)))
 				{
 					ERR("recv");
@@ -236,7 +229,11 @@ int main(int argc, char* argv[])
 				else
 					printf("ConnectThread: recvd %d bytes\n", ret);
 			}
-		}
+			else
+			{
+				ERR("connect");
+				__leave;
+			}
 	}
 	__finally
 	{

@@ -7,9 +7,10 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <cstdlib>
+#include <iostream>
 
 #pragma comment(lib, "Ws2_32.lib")
-//#define DEFAULT_PORT 5223
+#define DEFAULT_PORT "5223"
 //#define DEFAULT_BUFLEN 512
 //#define CLOSESOCK(s) \
 //        if(INVALID_SOCKET != s) {closesocket(s); s = INVALID_SOCKET;}
@@ -138,6 +139,7 @@ int main(int argc, char **argv)
 	INT Ret;
 	HANDLE ThreadHandle;
 	DWORD ThreadId;
+	PCSTR ip = "127.0.0.1";
 	WSAEVENT AcceptEvent;
 
 	if ((Ret = WSAStartup((2, 2), &wsaData)) != 0)
@@ -149,7 +151,21 @@ int main(int argc, char **argv)
 	else
 		printf("WSAStartup() is OK!\n");
 
-	if ((ListenSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED)) == INVALID_SOCKET)
+	struct addrinfo *pResult = NULL, *ptr = NULL, hints;
+	ZeroMemory(&hints, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+	hints.ai_flags = WSA_FLAG_OVERLAPPED;
+	int iResult = getaddrinfo(NULL , DEFAULT_PORT, &hints, &pResult);
+	if (iResult)
+	{
+		printf("getaddrinfo failed: %d\n", iResult);
+		WSACleanup();
+		return 1;
+	}
+
+	if ((ListenSocket = WSASocket(pResult->ai_family, pResult->ai_socktype, pResult->ai_flags, NULL, 0, pResult->ai_flags)) == INVALID_SOCKET)
 	{
 		printf("Failed to get a socket %d\n", WSAGetLastError());
 		return 1;
@@ -157,11 +173,12 @@ int main(int argc, char **argv)
 	else
 		printf("WSASocket() is pretty fine!\n");
 
-	InternetAddr.sin_family = AF_INET;
-	InternetAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	InternetAddr.sin_port = htons(PORT);
+	//InternetAddr.sin_family = AF_INET;
+	//InternetAddr.sin_addr.s_addr = INADDR_ANY;
+	//InternetAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	//InternetAddr.sin_port = htons(PORT);
 
-	if (bind(ListenSocket, (PSOCKADDR)&InternetAddr, sizeof(InternetAddr)) == SOCKET_ERROR)
+	if (bind(ListenSocket, pResult->ai_addr, pResult->ai_addrlen) == SOCKET_ERROR)
 	{
 		printf("bind() failed with error %d\n", WSAGetLastError());
 		return 1;
@@ -299,8 +316,12 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 
 	if (Error != 0 || BytesTransferred == 0)
 	{
+		printf("trying close socket %d\n", SI->Socket);
 		closesocket(SI->Socket);
-		GlobalFree(SI);
+		if (SI->Socket == INVALID_SOCKET) {
+			printf("Socket Free");
+			GlobalFree(SI);
+		}
 		return;
 	}
 
@@ -310,11 +331,13 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 	if (SI->BytesRECV == 0)
 	{
 		SI->BytesRECV = BytesTransferred;
+		std::cout << SI->BytesRECV << std::endl;
 		SI->BytesSEND = 0;
 	}
 	else
 	{
 		SI->BytesSEND += BytesTransferred;
+		std::cout << SI->BytesSEND << std::endl;
 	}
 
 	if (SI->BytesRECV > SI->BytesSEND)
