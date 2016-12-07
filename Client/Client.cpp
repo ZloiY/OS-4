@@ -170,7 +170,6 @@ int main(int argc, char* argv[])
 		}
 		srand(time(0));
 		int max_length = 1 + rand() % 20;
-
 		char *sendbuf = new char[max_length];
 		for (int i(0); i < max_length; i++)
 			sendbuf[i] = 32 + rand() % 125;
@@ -203,7 +202,8 @@ int main(int argc, char* argv[])
 		if (connect(csock, pResult->ai_addr, pResult->ai_addrlen) != SOCKET_ERROR) {
 				//Call WSAPoll for writeability on connecting socket
 
-				printf("ConnectThread: Established connection\n");
+				printf("Established connection\n");
+				Sleep(2000 + rand() % 8000);
 				//Send data
 				cout << sendbuf << endl;
 				if (SOCKET_ERROR == (ret = send(csock, sendbuf, sizeof(sendbuf), 0)))
@@ -226,8 +226,10 @@ int main(int argc, char* argv[])
 					ERR("recv");
 					__leave;
 				}
-				else
-					printf("ConnectThread: recvd %d bytes\n", ret);
+				else {
+					printf("recvd %d bytes\n", ret);
+					Sleep(2000 + rand() % 8000);
+				}
 			}
 			else
 			{
