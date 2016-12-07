@@ -128,20 +128,27 @@ typedef struct _SOCKET_INFORMATION {
 
 void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED Overlapped, DWORD InFlags);
 DWORD WINAPI WorkerThread(LPVOID lpParameter);
+BOOL WINAPI ConsoleHandler(DWORD);
 
 SOCKET AcceptSocket;
+SOCKET ListenSocket;
+SOCKADDR_IN ClientAddr = { 0 };
 
 int main(int argc, char **argv)
 {
 	WSADATA wsaData;
-	SOCKET ListenSocket;
 	SOCKADDR_IN InternetAddr;
+	SOCKADDR_IN ClientAddr = {0};
 	INT Ret;
 	HANDLE ThreadHandle;
 	DWORD ThreadId;
-	PCSTR ip = "127.0.0.1";
 	WSAEVENT AcceptEvent;
 
+	if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)ConsoleHandler, TRUE))
+	{
+		printf("Unable to install handler!\n");
+		return EXIT_FAILURE;
+	}
 	if ((Ret = WSAStartup((2, 2), &wsaData)) != 0)
 	{
 		printf("WSAStartup() failed with error %d\n", Ret);
@@ -202,7 +209,6 @@ int main(int argc, char **argv)
 	else
 		printf("WSACreateEvent() is OK!\n");
 
-	// Create a worker thread to service completed I/O requests
 	if ((ThreadHandle = CreateThread(NULL, 0, WorkerThread, (LPVOID)AcceptEvent, 0, &ThreadId)) == NULL)
 	{
 		printf("CreateThread() failed with error %d\n", GetLastError());
@@ -214,15 +220,16 @@ int main(int argc, char **argv)
 	while (TRUE)
 	{
 		/*system("pause");*/
-		AcceptSocket = accept(ListenSocket, NULL, NULL);
-
+		int size = sizeof(ClientAddr);
+		AcceptSocket = accept(ListenSocket, (SOCKADDR*)&ClientAddr, &size);
+		
 		if (WSASetEvent(AcceptEvent) == FALSE)
 		{
 			printf("WSASetEvent() failed with error %d\n", WSAGetLastError());
 			return 1;
 		}
 		else
-			printf("WSASetEvent() should be working!\n");
+			printf("accept new client %s \n", inet_ntoa(ClientAddr.sin_addr));
 	}
 	return 0;
 }
@@ -235,12 +242,10 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 	DWORD Index;
 	DWORD RecvBytes;
 
-	// Save the accept event in the event array
 	EventArray[0] = (WSAEVENT)lpParameter;
 
 	while (TRUE)
 	{
-		// Wait for accept() to signal an event and also process WorkerRoutine() returns
 		while (TRUE)
 		{
 			Index = WSAWaitForMultipleEvents(1, EventArray, FALSE, WSA_INFINITE, TRUE);
@@ -250,17 +255,16 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 				return FALSE;
 			}
 			else
-				printf("WSAWaitForMultipleEvents() should be OK!\n");
+				printf("WSACreateEvent() is OK!\n");
 
 			if (Index != WAIT_IO_COMPLETION)
 			{
-				// An accept() call event is ready - break the wait loop
 				break;
 			}
+			printf("%d idle", GetCurrentThreadId());
 		}
 
 		WSAResetEvent(EventArray[Index - WSA_WAIT_EVENT_0]);
-		// Create a socket information structure to associate with the accepted socket
 		if ((SocketInfo = (LPSOCKET_INFORMATION)GlobalAlloc(GPTR, sizeof(SOCKET_INFORMATION))) == NULL)
 		{
 			printf("GlobalAlloc() failed with error %d\n", GetLastError());
@@ -269,7 +273,6 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 		else
 			printf("GlobalAlloc() for SOCKET_INFORMATION is OK!\n");
 
-		// Fill in the details of our accepted socket
 		SocketInfo->Socket = AcceptSocket;
 		ZeroMemory(&(SocketInfo->Overlapped), sizeof(WSAOVERLAPPED));
 		SocketInfo->BytesSEND = 0;
@@ -291,19 +294,31 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 			printf("WSARecv() is OK!\n");
 
 		printf("Socket %d got connected...\n", AcceptSocket);
+		printf("Accept thread %d\n", (int)GetCurrentThreadId());
 	}
 	return TRUE;
 }
 
+BOOL WINAPI ConsoleHandler(DWORD dwType)
+{
+	switch(dwType)
+	{
+	case CTRL_C_EVENT:
+		printf("ctrl-c\n");
+		closesocket(ListenSocket);
+		exit(1);
+		break;
+	}
+	return true;
+}
 
 void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED Overlapped, DWORD InFlags)
 {
 	DWORD SendBytes, RecvBytes;
 	DWORD Flags;
 
-	// Reference the WSAOVERLAPPED structure as a SOCKET_INFORMATION structure
 	LPSOCKET_INFORMATION SI = (LPSOCKET_INFORMATION)Overlapped;
-
+	SOCKADDR_IN* client_addr = (SOCKADDR_IN*)Overlapped;
 	if (Error != 0)
 	{
 		printf("I/O operation failed with error %d\n", Error);
@@ -316,35 +331,26 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 
 	if (Error != 0 || BytesTransferred == 0)
 	{
-		printf("trying close socket %d\n", SI->Socket);
 		closesocket(SI->Socket);
-		if (SI->Socket == INVALID_SOCKET) {
-			printf("Socket Free");
-			GlobalFree(SI);
-		}
+		GlobalFree(SI);
+		printf("%d clinet %s disconected\n", (int)GetCurrentThreadId(), inet_ntoa(client_addr->sin_addr));
 		return;
 	}
 
-	// Check to see if the BytesRECV field equals zero. If this is so, then
-	// this means a WSARecv call just completed so update the BytesRECV field
-	// with the BytesTransferred value from the completed WSARecv() call
 	if (SI->BytesRECV == 0)
 	{
 		SI->BytesRECV = BytesTransferred;
-		std::cout << SI->BytesRECV << std::endl;
+		//std::cout << SI->BytesRECV << std::endl;
 		SI->BytesSEND = 0;
 	}
 	else
 	{
 		SI->BytesSEND += BytesTransferred;
-		std::cout << SI->BytesSEND << std::endl;
+		//std::cout << SI->BytesSEND << std::endl;
 	}
 
 	if (SI->BytesRECV > SI->BytesSEND)
 	{
-		// Post another WSASend() request.
-		// Since WSASend() is not guaranteed to send all of the bytes requested,
-		// continue posting WSASend() calls until all received bytes are sent
 		ZeroMemory(&(SI->Overlapped), sizeof(WSAOVERLAPPED));
 		SI->DataBuf.buf = SI->Buffer + SI->BytesSEND;
 		SI->DataBuf.len = SI->BytesRECV - SI->BytesSEND;
@@ -364,7 +370,6 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 	{
 		SI->BytesRECV = 0;
 
-		// Now that there are no more bytes to send post another WSARecv() request
 		Flags = 0;
 		ZeroMemory(&(SI->Overlapped), sizeof(WSAOVERLAPPED));
 		SI->DataBuf.len = DATA_BUFSIZE;

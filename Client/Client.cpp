@@ -157,10 +157,9 @@ int main(int argc, char* argv[])
 		}
 		struct addrinfo *pResult = NULL, *ptr = NULL, hints;
 		ZeroMemory(&hints, sizeof(hints));
-		hints.ai_family = AF_INET;
+		hints.ai_family = AF_UNSPEC;
 		hints.ai_socktype = SOCK_STREAM;
 		hints.ai_protocol = IPPROTO_TCP;
-		hints.ai_flags = AI_PASSIVE;
 		iResult = getaddrinfo("127.0.0.1", DEFAULT_PORT, &hints, &pResult);
 		if (iResult)
 		{
