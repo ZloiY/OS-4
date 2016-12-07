@@ -151,7 +151,7 @@ int main(int argc, char **argv)
 	else
 		printf("WSAStartup() is OK!\n");
 
-	struct addrinfo *pResult = NULL, *ptr = NULL, hints;
+	/*struct addrinfo *pResult = NULL, *ptr = NULL, hints;
 	ZeroMemory(&hints, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
@@ -163,9 +163,9 @@ int main(int argc, char **argv)
 		printf("getaddrinfo failed: %d\n", iResult);
 		WSACleanup();
 		return 1;
-	}
+	}*/
 
-	if ((ListenSocket = WSASocket(pResult->ai_family, pResult->ai_socktype, pResult->ai_flags, NULL, 0, pResult->ai_flags)) == INVALID_SOCKET)
+	if ((ListenSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED)) == INVALID_SOCKET)
 	{
 		printf("Failed to get a socket %d\n", WSAGetLastError());
 		return 1;
@@ -173,12 +173,12 @@ int main(int argc, char **argv)
 	else
 		printf("WSASocket() is pretty fine!\n");
 
-	//InternetAddr.sin_family = AF_INET;
-	//InternetAddr.sin_addr.s_addr = INADDR_ANY;
+	InternetAddr.sin_family = AF_INET;
+	InternetAddr.sin_addr.s_addr = INADDR_ANY;
 	//InternetAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-	//InternetAddr.sin_port = htons(PORT);
+	InternetAddr.sin_port = htons(PORT);
 
-	if (bind(ListenSocket, pResult->ai_addr, pResult->ai_addrlen) == SOCKET_ERROR)
+	if (bind(ListenSocket, (SOCKADDR*)&InternetAddr, sizeof(InternetAddr)) == SOCKET_ERROR)
 	{
 		printf("bind() failed with error %d\n", WSAGetLastError());
 		return 1;
