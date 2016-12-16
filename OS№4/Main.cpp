@@ -17,6 +17,8 @@
 #define PORT 5223
 #define DATA_BUFSIZE 8192
 
+using namespace std;
+
 typedef struct _SOCKET_INFORMATION {
 	OVERLAPPED Overlapped;
 	SOCKET Socket;
@@ -35,17 +37,17 @@ SOCKET ListenSocket;
 HANDLE hTempFile;
 SOCKADDR_IN ClientAddr = { 0 };
 LPSTR fileName = "Temp.txt";
-std::vector<std::string> Buffer;
+std::vector<std::string> server_buffer;
 int main(int argc, char **argv)
 {
 	WSADATA wsaData;
 	SOCKADDR_IN InternetAddr;
-	SOCKADDR_IN ClientAddr = {0};
+	SOCKADDR_IN ClientAddr = {1};
 	INT Ret;
 	HANDLE ThreadHandle;
 	DWORD ThreadId;
 	WSAEVENT AcceptEvent;
-	Buffer.reserve(MAX_PATH);
+	//server_buffer.reserve(MAX_PATH);
 	if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)ConsoleHandler, TRUE))
 	{
 		printf("Unable to install handler!\n");
@@ -66,7 +68,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	else;
-		//printf("WSASocket() is pretty fine!\n");
+		printf("WSASocket() is pretty fine!\n");
 
 	InternetAddr.sin_family = AF_INET;
 	InternetAddr.sin_addr.s_addr = INADDR_ANY;
@@ -78,15 +80,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	else;
-		//printf("bind() is OK!\n");
+		printf("bind() is OK!\n");
 
-	if (listen(ListenSocket, 1))
+	if (listen(ListenSocket, 0))
 	{
 		printf("listen() failed with error %d\n", WSAGetLastError());
 		return 1;
 	}
 	else;
-		//printf("listen() is OK!\n");
+		printf("listen() is OK!\n");
 
 	if ((AcceptEvent = WSACreateEvent()) == WSA_INVALID_EVENT)
 	{
@@ -103,10 +105,11 @@ int main(int argc, char **argv)
 	}
 	else
 		printf("CreateThread() should be fine!\n");*/
-
+	char buffer[15];
+	std::string tempStr = "";
+	int size = sizeof(SOCKADDR_IN);
 	while (TRUE)
 	{
-		int size = sizeof(ClientAddr);
 		AcceptSocket = accept(ListenSocket, (SOCKADDR*)&ClientAddr, &size);
 		
 		if (WSASetEvent(AcceptEvent) == FALSE)
@@ -115,11 +118,10 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		else {
-			//printf("accept new client %s\n", inet_ntoa(ClientAddr.sin_addr))
-			char buffer[15];
+			printf("accept new client %s\n", inet_ntoa(ClientAddr.sin_addr));
 			snprintf(buffer, sizeof(buffer), "accept new client %s \n", inet_ntoa(ClientAddr.sin_addr));
-			std::string tempStr = buffer;
-			Buffer.push_back(tempStr);
+			tempStr = buffer;
+			server_buffer.push_back(tempStr);
 			if ((ThreadHandle = CreateThread(NULL, 0, WorkerThread, (LPVOID)AcceptEvent, 0, &ThreadId)) == NULL)
 			{
 				printf("CreateThread() failed with error %d\n", GetLastError());
@@ -161,7 +163,7 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 			}
 			else {
 				//printf("%d idle", GetCurrentThreadId());
-					Buffer.push_back(std::to_string(GetCurrentThreadId()) + " idle\n");
+					//server_buffer.push_back(std::to_string(GetCurrentThreadId()) + " idle\n");
 			}
 		}
 
@@ -198,11 +200,11 @@ DWORD WINAPI WorkerThread(LPVOID lpParameter)
 		char buffer[15];
 		snprintf(buffer, sizeof(buffer), "Socket %d got connected...\n", AcceptSocket);
 		std::string tempStr = buffer;
-		Buffer.push_back(tempStr);
+		server_buffer.push_back(tempStr);
 		int i = GetThreadId(GetCurrentThread());
 		snprintf(buffer, sizeof(buffer), "Accept thread %d \n", i);
 		tempStr = buffer;
-		Buffer.push_back(tempStr);
+		server_buffer.push_back(tempStr);
 	}
 	return TRUE;
 }
@@ -222,16 +224,16 @@ BOOL WINAPI ConsoleHandler(DWORD dwType)
 		int index = 0;
 		do
 		{
-			const char* charBuffer = Buffer[Buffer.size() - index].c_str();
+			const char* charBuffer = server_buffer[server_buffer.size() - index].c_str();
 			DWORD bytesWrriten = 0;
 			index++;
 			if (!WriteFile(hTempFile, charBuffer, sizeof(charBuffer), &bytesWrriten, NULL))
 			{
 				printf("Error trying write to file %d", GetLastError());
 			}
-			Buffer.pop_back();
+			server_buffer.pop_back();
 		}
-		while (Buffer.size() != 0);
+		while (server_buffer.size() != 0);
 		exit(1);
 		break;
 	}
@@ -256,7 +258,7 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 		//printf("Closing socket %d\n\n", SI->Socket)
 		snprintf(buffer, sizeof(buffer), "Closing socket %d\n\n", SI->Socket);
 		tempStr = buffer;
-		Buffer.push_back(tempStr);
+		server_buffer.push_back(tempStr);
 	}
 
 	if (Error != 0 || BytesTransferred == 0)
@@ -266,7 +268,7 @@ void CALLBACK WorkerRoutine(DWORD Error, DWORD BytesTransferred, LPWSAOVERLAPPED
 		//printf("%d clinet disconected\n", (int)GetCurrentThreadId())
 		snprintf(buffer, sizeof(buffer), "%d clinet disconected\n", (int)GetCurrentThreadId());
 		tempStr = buffer;
-		Buffer.push_back(tempStr);
+		server_buffer.push_back(tempStr);
 		return;
 	}
 
